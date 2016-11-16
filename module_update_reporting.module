@@ -13,12 +13,40 @@ function module_update_reporting_cron() {
   if ($available = update_get_available(TRUE)) {
     module_load_include('inc', 'update', 'update.compare');
     $data = update_get_projects();
+    $sites = module_update_reporting_get_sites();
+    foreach ($sites as $site) {
+      if ($site->uuid[0]->value == '18151012-5ece-4e38-85a2-fffca15adb3d') {
+        break;
+      }
+    }
     //TODO: consider using Drush if availiabe as it picks up git projects.
     $queue = DrupalQueue::get('module_update_reporting_queue');
     foreach ($data as $row) {
+      $row['site'] = $site;
       $queue->createItem($row);
     }
   }
+}
+
+function module_update_reporting_get_sites() {
+  $account = module_update_reporting_login();
+  $root_url = module_update_reporting_get_root_url();
+  $query = http_build_query(array(
+    '_format' => 'json'
+  ));
+  $project_ids = module_update_reporting_get_project_ids();
+  //TODO: create custom endpoint to log installed projects.
+  $response = drupal_http_request(
+    $root_url . '/site?' . $query,
+    array(
+      'method' => 'GET',
+      'headers' => array(
+        'Content-Type' => 'application/json',
+        'Cookie' => $account->cookie,
+      ),
+    )
+  );
+  var_dump($response);
 }
 
 function module_update_reporting_send_info($item) {
@@ -46,7 +74,7 @@ function module_update_reporting_send_info($item) {
           'value' => 'Drupal 8.2'
         )),
         'field_site' => array(array(
-          'target_id' => '1'
+          'target_id' => $item['site']->nid[0]->value,
         )),
         'field_project' => array(array(
           'target_id' => $project_ids[$item['name']],
@@ -88,7 +116,7 @@ function module_update_reporting_get_project_ids() {
 }
 
 function module_update_reporting_get_root_url() {
-  return 'http://moduleupgrade.local';
+  return 'http://moduleupgrade.dd:8083';
 }
 
 function module_update_reporting_login() {
