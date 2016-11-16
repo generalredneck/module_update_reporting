@@ -1,0 +1,4 @@
+name = Module Update Reporting
+description = "Sends module version information to a configured Module Update Maintainer site."
+core = 7.x
+dependencies[] = update

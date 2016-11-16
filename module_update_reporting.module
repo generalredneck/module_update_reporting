@@ -1,0 +1,119 @@
+<?php
+
+function module_update_reporting_cron_queue_info() {
+  return array(
+    'module_update_reporting_queue' => array(
+      'worker callback' => 'module_update_reporting_send_info',
+      'time' => 60,
+    ),
+  );
+}
+
+function module_update_reporting_cron() {
+  if ($available = update_get_available(TRUE)) {
+    module_load_include('inc', 'update', 'update.compare');
+    $data = update_get_projects();
+    //TODO: consider using Drush if availiabe as it picks up git projects.
+    $queue = DrupalQueue::get('module_update_reporting_queue');
+    foreach ($data as $row) {
+      $queue->createItem($row);
+    }
+  }
+}
+
+function module_update_reporting_send_info($item) {
+  $account = module_update_reporting_login();
+  $root_url = module_update_reporting_get_root_url();
+  $query = http_build_query(array(
+    '_format' => 'json'
+  ));
+  $project_ids = module_update_reporting_get_project_ids();
+  //TODO: create custom endpoint to log installed projects.
+  $response = drupal_http_request(
+    $root_url . '/entity/node?' . $query,
+    array(
+      'method' => 'POST',
+      'headers' => array(
+        'Content-Type' => 'application/json',
+        'Cookie' => $account->cookie,
+        'X-CSRF-Token' => $account->csrf_token,
+      ),
+      'data' => json_encode(array(
+        'type' => array(array(
+          'target_id' => 'project_installed_record',
+        )),
+        'title' => array(array(
+          'value' => 'Drupal 8.2'
+        )),
+        'field_site' => array(array(
+          'target_id' => '1'
+        )),
+        'field_project' => array(array(
+          'target_id' => $project_ids[$item['name']],
+        )),
+        'field_project_version' => array(array(
+          'value' => '8.2',
+        )),
+        'field_drupal_core_version' => array(array(
+          'target_id' => '1',
+        )),
+      )),
+    )
+  );
+  var_dump($response);
+}
+
+function module_update_reporting_get_project_ids() {
+  $project_ids = &drupal_static(__FUNCTION__, array());
+  if (empty($project_ids)) {
+    $root_url = module_update_reporting_get_root_url();
+    $query = http_build_query(array(
+      '_format' => 'json'
+    ));
+    $response = drupal_http_request(
+      $root_url . '/taxonomy/project?' . $query,
+      array(
+        'method' => 'GET',
+        'headers' => array(
+          'Accept' => 'application/json',
+        ),
+      )
+    );
+    $projects = json_decode($response->data);
+    foreach($projects as $project) {
+      $project_ids[$project->field_project_machine_name[0]->value] = $project->tid[0]->value;
+    }
+  }
+  return $project_ids;
+}
+
+function module_update_reporting_get_root_url() {
+  return 'http://moduleupgrade.local';
+}
+
+function module_update_reporting_login() {
+  $account = &drupal_static(__FUNCTION__, array());
+  if (empty($account)) {
+    $root_url = module_update_reporting_get_root_url();
+    $query = http_build_query(array(
+      '_format' => 'json'
+    ));
+    $response = drupal_http_request(
+      $root_url . '/user/login?' . $query,
+      array(
+        'method' => 'POST',
+        'headers' => array(
+          'Accept' => 'application/json',
+        ),
+        'data' => json_encode(array(
+          'name' => 'admin',
+          'pass' => 'drupaladm1n',
+          'form_id' => 'user_login_form',
+        )),
+      )
+    );
+    $account = json_decode($response->data);
+    $account->cookie = $response->headers['set-cookie'];
+  }
+  return $account;
+}
